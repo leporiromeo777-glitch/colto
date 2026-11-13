@@ -1,0 +1,7 @@
+# Netlify: costruisce la pagina dai contenuti e pubblica la cartella dist/
+[build]
+  command = "node scripts/build.mjs"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
