@@ -42,7 +42,8 @@ un account né un server).
 ```
 contenuti/      i video: un file JSON per gruppo di libri + GUIDA.md (come si scrivono)
 src/            pagina.html, stile.css, categorie.json (nomi e colori), js/ (app)
-scripts/        valida.mjs (controlla i contenuti), build.mjs (crea dist/)
+scripts/        valida.mjs (controlla i contenuti), build.mjs (crea dist/), voce.mjs (voce narrante)
+audio/          clip della voce narrante e indice delle durate
 dist/           index.html pronto da pubblicare
 ```
 
@@ -53,7 +54,7 @@ I moduli in `src/js/`, nell'ordine in cui vengono uniti:
 | `00-tempi.js` | quanto dura ogni scena (formule usate anche dal validatore) |
 | `01-base.js` | dati, utilità, memoria nel browser, icone |
 | `02-scene.js` | da scena JSON a HTML; grafici SVG; adattamento del testo allo spazio |
-| `03-suono.js` | effetti e base ritmica sintetizzati con Web Audio (nessun file audio) |
+| `03-suono.js` | effetti e base ritmica sintetizzati con Web Audio; voce narrante registrata |
 | `04-riproduttore.js` | fa scorrere le scene: tagli, quiz, mito, voce del dispositivo |
 | `05-premi.js` | punti, livelli, obiettivo del giorno, coriandoli |
 | `06-feed.js` | il feed verticale, le azioni, l'ordine «Per te» |
@@ -66,6 +67,25 @@ Nessuna dipendenza da installare: serve solo Node 20 o più recente.
 node scripts/valida.mjs     # controlla tutti i video
 node scripts/build.mjs      # ricrea dist/index.html (si ferma se un video non è valido)
 ```
+
+## Voce narrante
+
+I video possono avere una voce registrata (oggi ElevenLabs, voce «Dylan», tramite
+Higgsfield): una clip MP3 per scena in `audio/<id-video>/`, più `audio/indice.json` con
+durate e testo letto. Quando un video ha la sua voce, le scene durano quanto le frasi,
+le parole si accendono al ritmo di chi parla e la musica si abbassa mentre parla.
+I video senza voce registrata usano, se la accendi, la sintesi vocale del telefono.
+
+```sh
+node scripts/voce.mjs testi <id-video>        # le frasi da far leggere, una per scena
+node scripts/voce.mjs registra elenco.json    # scarica le clip generate, le misura, aggiorna l'indice
+```
+
+`elenco.json` è una lista `[{ "id": "<id-video>", "chiave": "3", "url": "https://…mp3" }]`.
+Se cambi il testo di una scena, la sua clip non vale più: il video torna senza voce
+finché non la registri di nuovo (`testi` segna con `"fatta": false` quelle da rifare).
+La voce si sente solo da un indirizzo web (Netlify o un server locale), non aprendo il
+file con un doppio clic.
 
 ## Aggiungere video
 
@@ -84,5 +104,5 @@ esempio, quiz, mito, chiusura.
   verifica dei fatti a campione sul web: possono restare imprecisioni. Non sono
   consulenza finanziaria, medica o legale.
 - I «video» vivono dentro l'app: non sono file MP4 da caricare su altri social.
-- Suoni e base ritmica sono sintetizzati dal browser; la voce usa la sintesi vocale del
-  dispositivo, e la qualità dipende dal telefono.
+- Suoni e base ritmica sono sintetizzati dal browser. La voce registrata c'è solo nei
+  video che l'hanno; negli altri si può accendere la sintesi vocale del telefono.

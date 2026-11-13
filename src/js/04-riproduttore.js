@@ -60,9 +60,28 @@ class Riproduttore {
     this.passo = this.passo.bind(this);
   }
 
+  // Tempi di una scena. Con la voce registrata la scena dura quanto la frase, più un respiro.
+  tempi(sc, i) {
+    const n = this.video.narrazione;
+    if (sc.tipo === 'quiz') {
+      const base = durataQuiz(sc);
+      return n ? { domanda: n[i] + 2400, risposta: Math.max(1800, n[i + 'b'] + 500) } : base;
+    }
+    if (sc.tipo === 'mito') {
+      const base = durataMito(sc);
+      return n ? { mito: n[i] + 950, realta: n[i + 'b'] + 600 } : base;
+    }
+    if (!n) return durataScena(sc);
+    const minimo = { grafico: 3600, numero: 2600, confronto: 2800, elenco: 2200, colpo: 1300 }[sc.tipo] || 1500;
+    return Math.max(minimo, n[i] + 420);
+  }
+
   monta() {
     const scene = this.video.scene;
-    this.durate = scene.map(durataScena);
+    this.durate = scene.map((sc, i) => {
+      const t = this.tempi(sc, i);
+      return typeof t === 'number' ? t : sc.tipo === 'quiz' ? t.domanda + t.risposta : t.mito + t.realta;
+    });
     this.nodi = [$('.scena', this.scatola)];
     for (let i = 1; i < scene.length; i++) {
       const nodo = creaScena(scene[i], this.video, i);
@@ -89,6 +108,7 @@ class Riproduttore {
     this.attivo = false;
     cancelAnimationFrame(this.raf);
     voce.zitta();
+    narratore.stop();
     base.ferma();
     this.nodi.slice(1).forEach((n) => n.remove());
     const primo = this.nodi[0];
@@ -115,7 +135,8 @@ class Riproduttore {
     const nodo = this.nodi[this.i];
     if (sc.tipo === 'quiz' && !this.rivelato && this.t >= this.quiz.domanda) this.rivela(null);
     if (this.mito) {
-      if (!this.timbrato && this.t >= this.mito.mito * 0.58) {
+      const timbro = this.video.narrazione ? this.mito.mito - 800 : this.mito.mito * 0.58;
+      if (!this.timbrato && this.t >= timbro) {
         this.timbrato = true;
         nodo.classList.add('timbrata');
         suono.timbro();
@@ -125,7 +146,7 @@ class Riproduttore {
         this.svelato = true;
         nodo.classList.add('svelata');
         suono.pop();
-        voce.di(`Falso. ${senzaSegni(sc.realta)}`);
+        this.parla(`${this.i}b`, `Falso. ${senzaSegni(sc.realta)}`);
       }
     }
     if (this.contatore) {
@@ -140,7 +161,7 @@ class Riproduttore {
       this.palco.classList.add('alla-fine');
     }
     if (this.t >= d) {
-      if (voce.staParlando() && this.t < d + 9000) return; // aspetta che la voce finisca la frase
+      if ((voce.staParlando() || narratore.staParlando()) && this.t < d + 6000) return; // aspetta la fine della frase
       this.vai(this.i + 1);
     }
   }
@@ -168,8 +189,8 @@ class Riproduttore {
     nodo.classList.add('on');
 
     this.rivelato = false;
-    this.quiz = sc.tipo === 'quiz' ? durataQuiz(sc) : null;
-    this.mito = sc.tipo === 'mito' ? durataMito(sc) : null;
+    this.quiz = sc.tipo === 'quiz' ? this.tempi(sc, i) : null;
+    this.mito = sc.tipo === 'mito' ? this.tempi(sc, i) : null;
     this.timbrato = false;
     this.svelato = false;
     this.ultima = i === this.nodi.length - 1;
@@ -190,7 +211,22 @@ class Riproduttore {
 
     this.segmenti.forEach((s, k) => { s.style.transform = `scaleX(${k < i ? 1 : 0})`; });
     disposizione(this.video, i).forEach((tr, k) => { this.forme[k].style.transform = tr; });
-    voce.di(testoVoce(sc));
+    this.parla(String(i), testoVoce(sc));
+  }
+
+  // La voce registrata se il video ce l'ha, altrimenti (se accesa) la voce del dispositivo.
+  parla(chiave, testo, da = 0) {
+    if (this.video.narrazione) narratore.suona(this.video.id, chiave, da);
+    else voce.di(testo);
+  }
+
+  // Dopo aver acceso il suono a metà scena: la voce riparte dal punto giusto.
+  riprendiVoce() {
+    if (!this.attivo || !this.video.narrazione || this.inPausa) return;
+    const sc = this.video.scene[this.i];
+    if (sc.tipo === 'quiz' && this.rivelato) this.parla(`${this.i}b`, '', this.t - this.quiz.domanda);
+    else if (sc.tipo === 'mito' && this.svelato) this.parla(`${this.i}b`, '', this.t - this.mito.mito);
+    else this.parla(String(this.i), '', this.t);
   }
 
   // scelta: indice toccato, oppure null se il tempo è scaduto e la risposta si svela da sola
@@ -208,13 +244,14 @@ class Riproduttore {
     this.t = this.quiz.domanda;
     if (scelta === null) suono.pop();
     else premiaQuiz(this.video, scelta === sc.corretta, this.palco);
-    voce.di(`${senzaSegni(sc.opzioni[sc.corretta])}. ${sc.spiegazione}`);
+    this.parla(`${this.i}b`, `${senzaSegni(sc.opzioni[sc.corretta])}. ${sc.spiegazione}`);
   }
 
   pausa(si = !this.inPausa) {
     this.inPausa = si;
     this.palco.classList.toggle('in-pausa', si);
     voce.ferma(si);
+    narratore.pausa(si);
     if (si) base.ferma(); else base.parti(this.video.id);
   }
 

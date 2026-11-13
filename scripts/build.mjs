@@ -2,10 +2,11 @@
 // Unisce stile, script e contenuti in un solo file:
 //   dist/index.html      pagina completa (si apre anche con un doppio clic, si pubblica ovunque)
 //   dist/artifact.html   la stessa pagina senza <html>/<head>/<body>, per gli Artifact di Claude
-import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validaTutto, validaVideo, CATEGORIE } from './valida.mjs';
+import { narrazioni } from './voce.mjs';
 
 const RADICE = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const leggi = (p) => readFileSync(join(RADICE, p), 'utf8');
@@ -28,6 +29,10 @@ if (tollera) {
   video = video.filter((v) => v?.id && !visti.has(v.id) && visti.add(v.id) && validaVideo(v).length === 0);
   if (video.length < prima) console.warn(`! anteprima: ${prima - video.length} video lasciati fuori perché non validi`);
 }
+
+// Voce registrata: le durate delle clip entrano nei dati, i file vanno in dist/audio/.
+const voci = narrazioni(video);
+video = video.map((v) => (voci[v.id] ? { ...v, narrazione: voci[v.id] } : v));
 
 const stile = leggi('src/stile.css');
 const script = readdirSync(join(RADICE, 'src/js')).filter((f) => f.endsWith('.js')).sort()
@@ -56,9 +61,11 @@ ${corpo.trim()}
 `;
 
 mkdirSync(join(RADICE, 'dist'), { recursive: true });
+rmSync(join(RADICE, 'dist/audio'), { recursive: true, force: true });
+for (const id of Object.keys(voci)) cpSync(join(RADICE, 'audio', id), join(RADICE, 'dist/audio', id), { recursive: true });
 writeFileSync(join(RADICE, 'dist/index.html'), completa);
 writeFileSync(join(RADICE, 'dist/artifact.html'), `${testa.trim()}\n${corpo.trim()}\n`);
 
 const libri = new Set(video.map((v) => v.libro.titolo)).size;
 const kb = (Buffer.byteLength(completa) / 1024).toFixed(0);
-console.log(`✓ ${video.length} video da ${libri} libri → dist/index.html (${kb} KB)`);
+console.log(`✓ ${video.length} video da ${libri} libri, ${Object.keys(voci).length} con la voce → dist/index.html (${kb} KB)`);

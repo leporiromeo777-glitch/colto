@@ -97,12 +97,13 @@ function idrata(clip) {
       ${bottone('salva', ICONE.segnalibro, 'Salva', !!memoria.salvati[video.id])}
       ${bottone('condividi', ICONE.condividi, 'Invia')}
       ${bottone('suono', suono.vuole && suono.pronto ? ICONE.suono : ICONE.muto, 'Suono', suono.vuole && suono.pronto)}
-      ${voce.ok ? bottone('voce', ICONE.voce, 'Voce', voce.attiva) : ''}
+      ${voce.ok && !video.narrazione ? bottone('voce', ICONE.voce, 'Voce', voce.attiva) : ''}
     </div>`;
   const primo = creaScena(video.scene[0], video, 0);
   primo.classList.add('fermo');
   $('.scene', palco).append(primo);
   adatta(primo);
+  narratore.carica(video);
 }
 
 function creaClipFinale() {
@@ -221,7 +222,7 @@ function aggiornaAudio() {
 
 function ripartiBase() {
   const r = stato.attivo?.riproduttore;
-  if (r && !r.inPausa && !pannelloAperto()) base.parti(r.video.id);
+  if (r && !r.inPausa && !pannelloAperto()) { base.parti(r.video.id); r.riprendiVoce(); }
 }
 
 let avvisoTimer = 0;
@@ -293,7 +294,7 @@ feed.addEventListener('click', (ev) => {
         suono.vuole = !suono.vuole;
         memoria.suono = suono.vuole;
         ricorda();
-        if (suono.vuole) { suono.sblocca(); ripartiBase(); suono.pop(); } else base.ferma();
+        if (suono.vuole) { suono.sblocca(); ripartiBase(); suono.pop(); } else { base.ferma(); narratore.stop(); }
         aggiornaAudio();
         avviso(suono.vuole ? 'Suono acceso' : 'Suono spento', 1400);
       }

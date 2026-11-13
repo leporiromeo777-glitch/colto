@@ -69,26 +69,29 @@ function svgGrafico(sc) {
 // Ritmi delle parole: i ganci arrivano di colpo, i testi si accendono al passo di chi legge.
 const SVELTO = 18;
 const LETTURA = 44;
+// Con la voce registrata le parole si accendono al passo di chi parla: ritmo > 1 rallenta, < 1 accelera.
+let ritmo = 1;
+const lettura = () => Math.round(LETTURA * ritmo);
 
 function htmlScena(sc, video) {
   const cat = CAT[video.categoria];
   switch (sc.tipo) {
     case 'apertura':
       return `<p class="etichetta entra" style="--d:0ms">${esc(cat.nome)}</p>
-        <h2 class="gancio">${htmlParole(sc.testo, { inizio: 60, ms: SVELTO })}</h2>`;
+        <h2 class="gancio">${htmlParole(sc.testo, { inizio: 60, ms: ritmo === 1 ? SVELTO : lettura() })}</h2>`;
     case 'colpo':
       return `<p class="pugno">${htmlParole(sc.testo, { inizio: 30, ms: SVELTO })}</p>`;
     case 'testo':
       return `${sc.titolo ? `<h3 class="titolo">${htmlParole(sc.titolo, { ms: SVELTO })}</h3>` : ''}
-        <p class="paragrafo">${htmlParole(sc.testo, { inizio: sc.titolo ? 420 : 100, ms: LETTURA, modo: 'k' })}</p>`;
+        <p class="paragrafo">${htmlParole(sc.testo, { inizio: sc.titolo ? 420 : 100, ms: lettura(), modo: 'k' })}</p>`;
     case 'principio':
       return `<p class="etichetta entra" style="--d:0ms">L’idea in una frase</p>
-        <p class="massima">${htmlParole(sc.testo, { inizio: 160, ms: 38 })}</p>`;
+        <p class="massima">${htmlParole(sc.testo, { inizio: 160, ms: ritmo === 1 ? 38 : lettura() })}</p>`;
     case 'elenco': {
       let attesa = 420;
       const voci = sc.voci.map((v, i) => {
         const li = `<li class="entra" style="--d:${attesa}ms"><span class="segno">${sc.numerato ? String(i + 1) : ''}</span><span>${htmlTesto(v)}</span></li>`;
-        attesa += 380 + lunghezza(v) * 34;
+        attesa += Math.round((380 + lunghezza(v) * 34) * ritmo);
         return li;
       }).join('');
       return `<h3 class="titolo">${htmlParole(sc.titolo, { ms: SVELTO })}</h3>
@@ -96,7 +99,7 @@ function htmlScena(sc, video) {
     }
     case 'numero':
       return `<p class="cifra entra" style="--d:0ms">${sc.prefisso ? `<span class="cifra-lato">${esc(sc.prefisso)}</span>` : ''}<span class="cifra-val" data-v="${sc.valore}" data-dec="${sc.decimali || 0}">${formatta(sc.valore, sc.decimali || 0)}</span>${sc.suffisso ? `<span class="cifra-lato">${esc(sc.suffisso)}</span>` : ''}</p>
-        <p class="paragrafo">${htmlParole(sc.didascalia, { inizio: 850, ms: LETTURA, modo: 'k' })}</p>
+        <p class="paragrafo">${htmlParole(sc.didascalia, { inizio: 850, ms: lettura(), modo: 'k' })}</p>
         ${sc.nota ? `<p class="nota entra" style="--d:1500ms">${esc(tipografia(sc.nota))}</p>` : ''}`;
     case 'confronto': {
       const lato = (x, quale, ms) => `<div class="lato lato--${quale} entra" style="--d:${ms}ms">
@@ -104,7 +107,7 @@ function htmlScena(sc, video) {
           <ul>${x.voci.map((v) => `<li>${htmlTesto(v)}</li>`).join('')}</ul>
         </div>`;
       const primo = sc.titolo ? 300 : 80;
-      const dopo = primo + 750 + somma(sc.a.voci) * 26;
+      const dopo = primo + Math.round((750 + somma(sc.a.voci) * 26) * ritmo);
       return `${sc.titolo ? `<h3 class="titolo">${htmlParole(sc.titolo, { ms: SVELTO })}</h3>` : ''}
         <div class="lati">${lato(sc.a, 'a', primo)}${lato(sc.b, 'b', dopo)}</div>`;
     }
@@ -115,7 +118,7 @@ function htmlScena(sc, video) {
     case 'esempio':
       return `<div class="scheda entra" style="--d:0ms">
           <p class="etichetta">Esempio</p>
-          <p class="paragrafo">${htmlParole(sc.testo, { inizio: 260, ms: LETTURA, modo: 'k' })}</p>
+          <p class="paragrafo">${htmlParole(sc.testo, { inizio: 260, ms: lettura(), modo: 'k' })}</p>
         </div>`;
     case 'quiz':
       return `<p class="etichetta entra" style="--d:0ms">Tocca la risposta</p>
@@ -135,7 +138,7 @@ function htmlScena(sc, video) {
     case 'chiusura': {
       const l = video.libro;
       return `<p class="etichetta entra" style="--d:0ms">Da provare oggi</p>
-        <p class="azione">${htmlParole(sc.azione, { inizio: 120, ms: 26 })}</p>
+        <p class="azione">${htmlParole(sc.azione, { inizio: ritmo === 1 ? 120 : 1100, ms: ritmo === 1 ? 26 : lettura() })}</p>
         <div class="colofone entra" style="--d:${Math.round(500 + lunghezza(sc.azione) * 26)}ms">
           <p class="colofone-da">Dal libro</p>
           <p class="colofone-libro">${esc(tipografia(l.titolo))}</p>
@@ -147,7 +150,11 @@ function htmlScena(sc, video) {
 }
 
 function creaScena(sc, video, i) {
+  const ms = video.narrazione?.[String(i)];
+  const caratteri = lunghezza(testoVoce(sc));
+  ritmo = ms && caratteri ? Math.min(2.2, Math.max(0.7, ms / (caratteri * LETTURA))) : 1;
   const s = crea('div', `scena scena--${sc.tipo}`, `<div class="corpo">${htmlScena(sc, video)}</div>`);
+  ritmo = 1;
   s.dataset.i = i;
   return s;
 }

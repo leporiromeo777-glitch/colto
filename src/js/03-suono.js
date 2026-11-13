@@ -1,5 +1,6 @@
 // Suoni generati dal browser (Web Audio): effetti sui tagli e una base ritmica diversa per ogni video.
-// Niente file audio: tutto è sintetizzato. Parte solo dopo un tocco, come vuole il browser.
+// Gli effetti sono sintetizzati; la voce narrante, dove c'è, sono file in audio/<id>/.
+// Tutto parte solo dopo un tocco, come vuole il browser.
 
 const suono = {
   ctx: null,
@@ -22,6 +23,9 @@ const suono = {
         this.uscita = this.ctx.createGain();
         this.uscita.gain.value = 0.65;
         this.uscita.connect(freno).connect(this.ctx.destination);
+        // la base ritmica passa da qui, così si abbassa mentre parla la voce
+        this.musica = this.ctx.createGain();
+        this.musica.connect(this.uscita);
       }
       if (this.ctx.state !== 'running') this.ctx.resume();
       this.pronto = true;
@@ -45,7 +49,7 @@ const suono = {
     o.stop(t + dur + 0.03);
   },
 
-  _rumore({ dur = 0.1, vol = 0.1, tipo = 'bandpass', f = 2000, a = 0, q = 1, tra = 0 }) {
+  _rumore({ dur = 0.1, vol = 0.1, tipo = 'bandpass', f = 2000, a = 0, q = 1, tra = 0, dove = null }) {
     if (!this.attivo()) return;
     const t = this.ctx.currentTime + tra;
     if (!this._bianco) {
@@ -65,7 +69,7 @@ const suono = {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.02, dur / 3));
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(filtro).connect(g).connect(this.uscita);
+    s.connect(filtro).connect(g).connect(dove || this.uscita);
     s.start(t, Math.random() * 0.4);
     s.stop(t + dur + 0.03);
   },
@@ -141,17 +145,119 @@ const base = {
   _suona(i, tra) {
     const s = i % 16;
     const semitoni = (n) => this.radice * Math.pow(2, n / 12);
-    if (this.cassa.includes(s)) suono._tono({ f: 118, a: 42, dur: 0.2, vol: 0.34, tra });
+    if (this.cassa.includes(s)) suono._tono({ f: 118, a: 42, dur: 0.2, vol: 0.34, tra, dove: suono.musica });
     if (s === 4 || s === 12) {
-      suono._rumore({ dur: 0.11, vol: 0.085, f: 1700, q: 0.7, tra });
-      suono._tono({ f: 190, a: 120, dur: 0.08, vol: 0.06, tipo: 'triangle', tra });
+      suono._rumore({ dur: 0.11, vol: 0.085, f: 1700, q: 0.7, tra, dove: suono.musica });
+      suono._tono({ f: 190, a: 120, dur: 0.08, vol: 0.06, tipo: 'triangle', tra, dove: suono.musica });
     }
-    if (s % 2 === 0) suono._rumore({ dur: 0.035, vol: s % 4 === 2 ? 0.03 : 0.018, tipo: 'highpass', f: 7000, tra });
+    if (s % 2 === 0) suono._rumore({ dur: 0.035, vol: s % 4 === 2 ? 0.03 : 0.018, tipo: 'highpass', f: 7000, tra, dove: suono.musica });
     if (s === 0 || s === 8) {
       const nota = this.bassi[Math.floor(i / 8) % 4];
-      suono._tono({ f: semitoni(nota), dur: this.passo * 6, vol: 0.17, tipo: 'triangle', attacco: 0.01, tra });
+      suono._tono({ f: semitoni(nota), dur: this.passo * 6, vol: 0.17, tipo: 'triangle', attacco: 0.01, tra, dove: suono.musica });
     }
     const m = this.melodia[i];
-    if (m !== null) suono._tono({ f: semitoni(m + 24), dur: 0.32, vol: 0.05, tipo: 'sine', attacco: 0.006, tra });
+    if (m !== null) suono._tono({ f: semitoni(m + 24), dur: 0.32, vol: 0.05, tipo: 'sine', attacco: 0.006, tra, dove: suono.musica });
+  },
+};
+
+// Voce narrante registrata: una clip per scena (audio/<id>/<scena>.mp3; quiz e mito hanno anche «<scena>b»).
+// Si scaricano in anticipo; si decodificano quando il suono è sbloccato.
+const narratore = {
+  cache: new Map(),
+  sorgente: null,
+  attuale: null,      // { url, buffer, inizio } della clip che sta suonando
+  voluto: null,       // l'ultima clip chiesta, per non far partire clip arrivate in ritardo
+  ferma0: 0,          // posizione (s) a cui era arrivata la clip messa in pausa
+
+  url: (id, chiave) => `audio/${encodeURIComponent(id)}/${chiave}.mp3`,
+
+  _voce(url) {
+    let e = this.cache.get(url);
+    if (!e) {
+      // aprendo la pagina come file (doppio clic) il browser non scarica gli audio: il video resta senza voce
+      const dati = /^https?:$/.test(location.protocol)
+        ? fetch(url).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+        : Promise.reject(new Error('file'));
+      e = { dati, buffer: null, decod: null };
+      e.dati.catch(() => {});
+      this.cache.set(url, e);
+    }
+    if (!e.buffer && !e.decod && suono.ctx) {
+      e.decod = e.dati.then((b) => new Promise((ok, no) => suono.ctx.decodeAudioData(b.slice(0), ok, no)))
+        .then((buf) => { e.buffer = buf; return buf; })
+        .catch(() => null);
+    }
+    return e;
+  },
+
+  carica(video) {
+    if (!video?.narrazione) return;
+    for (const k of Object.keys(video.narrazione)) this._voce(this.url(video.id, k));
+  },
+
+  // da: millisecondi già trascorsi della clip (per riprendere a metà)
+  suona(id, chiave, da = 0) {
+    this.stop();
+    if (!suono.attivo()) return;
+    const url = this.url(id, chiave);
+    const e = this._voce(url);
+    const chiesta = { url, t0: suono.ctx.currentTime - da / 1000 };
+    this.voluto = chiesta;
+    const parti = (buf) => {
+      if (!buf || this.voluto !== chiesta || !suono.attivo()) return;
+      const offset = Math.max(0, suono.ctx.currentTime - chiesta.t0);
+      if (offset > buf.duration - 0.25) return;
+      this._avvia(url, buf, offset);
+    };
+    if (e.buffer) parti(e.buffer); else e.decod?.then(parti);
+  },
+
+  _avvia(url, buf, offset) {
+    const ctx = suono.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(suono.uscita);
+    src.onended = () => {
+      if (this.sorgente !== src) return;
+      this.sorgente = null;
+      this.attuale = null;
+      this._musica(1);
+    };
+    src.start(0, offset);
+    this.sorgente = src;
+    this.attuale = { url, buffer: buf, inizio: ctx.currentTime - offset };
+    this._musica(0.3);
+  },
+
+  _musica(livello) {
+    if (!suono.musica) return;
+    const t = suono.ctx.currentTime;
+    suono.musica.gain.cancelScheduledValues(t);
+    suono.musica.gain.setTargetAtTime(livello, t, livello < 1 ? 0.06 : 0.35);
+  },
+
+  staParlando() { return !!this.sorgente; },
+
+  pausa(si) {
+    if (si) {
+      if (!this.attuale) return;
+      this.ferma0 = { url: this.attuale.url, buffer: this.attuale.buffer, pos: suono.ctx.currentTime - this.attuale.inizio };
+      this.stop(true);
+    } else if (this.ferma0 && suono.attivo()) {
+      const { url, buffer, pos } = this.ferma0;
+      this.ferma0 = null;
+      this.voluto = { url };
+      this._avvia(url, buffer, pos);
+    }
+  },
+
+  stop(tieniPausa) {
+    this.voluto = null;
+    if (!tieniPausa) this.ferma0 = null;
+    const src = this.sorgente;
+    this.sorgente = null;
+    this.attuale = null;
+    if (src) { try { src.onended = null; src.stop(); } catch (e) { /* già finita */ } }
+    if (suono.ctx) this._musica(1);
   },
 };

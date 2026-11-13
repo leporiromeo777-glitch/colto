@@ -55,7 +55,7 @@ document.addEventListener('click', () => {
 $('#invito-suono').addEventListener('click', () => { /* basta il clic: ci pensa l'ascoltatore qui sopra */ });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { voce.zitta(); base.ferma(); return; }
+  if (document.hidden) { voce.zitta(); narratore.stop(); base.ferma(); return; }
   if (suono.pronto) { try { suono.ctx.resume().then(ripartiBase).catch(() => {}); } catch (e) { /* niente */ } }
 });
 if (voce.ok) { try { speechSynthesis.addEventListener('voiceschanged', () => { voce._scelta = null; }); } catch (e) { /* niente */ } }
@@ -73,3 +73,6 @@ costruisciFeed(decodeURIComponent(location.hash.slice(1)));
 aggiornaCromo();
 aggiornaAudio();
 if (!memoria.guida) setTimeout(() => { if (!memoria.guida && !pannelloAperto()) avviso('Scorri in su per la prossima idea. Un tocco mette in pausa.', 5200); }, 6500);
+
+// Per le prove automatiche e il debug dalla console.
+window.__colto = { stato, suono, narratore, memoria };
